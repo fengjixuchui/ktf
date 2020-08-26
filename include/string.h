@@ -28,6 +28,8 @@
 
 static inline __used int isspace(int c) { return c == ' ' || c == '\t'; }
 
+static inline __used int iseostr(int c) { return c == '\0'; }
+
 static inline __used int isdigit(int c) { return c >= '0' && c <= '9'; }
 
 static inline __used int isxdigit(int c) {
@@ -148,6 +150,19 @@ static inline int strcmp(const char *s1, const char *s2) {
     return res;
 }
 
+static inline char *strchr(const char *s, int c) {
+    if (NULL == s)
+        return NULL;
+
+    while (*s != (char) c) {
+        if ('\0' == *s)
+            return NULL;
+        s++;
+    }
+
+    return (char *) s;
+}
+
 static inline int strncmp(const char *s1, const char *s2, size_t n) {
     register char res;
 
@@ -160,6 +175,13 @@ static inline int strncmp(const char *s1, const char *s2, size_t n) {
     }
 
     return res;
+}
+
+static inline const char *string_trim_whitspace(const char *s) {
+    while (isspace(*s))
+        s++;
+
+    return s;
 }
 
 /* External declarations */

@@ -22,24 +22,53 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef KTF_SMP_H
-#define KTF_SMP_H
-
 #include <ktf.h>
 #include <lib.h>
-#include <processor.h>
 
-#define INVALID_CPU (~0U)
+#include <toolkit/cache/lib.h>
 
-/* External declarations */
+/* Calculate average baseline for the specified cache line timing access.
+ * Calculate first intermediate average without flushing and then second
+ * intermediate average based on samples collected right after flushing
+ * the cache line.
+ * Return average of both averages.
+ */
+static uint64_t test_timings(const cache_line_t *cl) {
+    int i, t[SAMPLES_COUNT], avg[2];
 
-extern void init_smp(void);
-extern unsigned get_nr_cpus(void);
+    for (i = 0; i < SAMPLES_COUNT; i++) {
+        *(volatile uint8_t *) &cl->m8[0];
+        t[i] = cache_read_access_time(cl);
+    }
 
-/* Static declarations */
+    avg[0] = 0;
+    for (i = 0; i < SAMPLES_COUNT; i++)
+        avg[0] += t[i];
 
-static inline unsigned int smp_processor_id(void) {
-    return (unsigned int) rdmsr(MSR_TSC_AUX);
+    for (i = 0; i < SAMPLES_COUNT; i++) {
+        clflush(&cl->m8[0]);
+        t[i] = cache_read_access_time(cl);
+    }
+
+    avg[1] = 0;
+    for (i = 0; i < SAMPLES_COUNT; i++)
+        avg[1] += t[i];
+
+    return (avg[0] + avg[1]) / (SAMPLES_COUNT * ARRAY_SIZE(avg));
 }
 
-#endif /* KTF_SMP_H */
+/*
+ * Get cache access time baseline for specified memory address.
+ * The function returns a number of cycles it takes to read given
+ * memory on average.
+ */
+uint64_t cache_channel_baseline(const cache_line_t *cl, unsigned delay) {
+    uint64_t baseline = ~0UL;
+
+    for (int i = 0; i < SAMPLES_COUNT; i++) {
+        baseline = min(baseline, test_timings(cl));
+        wait_cycles(delay);
+    }
+
+    return baseline;
+}

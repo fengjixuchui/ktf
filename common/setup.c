@@ -24,6 +24,7 @@
  */
 #include <acpi.h>
 #include <apic.h>
+#include <cmdline.h>
 #include <console.h>
 #include <ktf.h>
 #include <lib.h>
@@ -44,11 +45,77 @@
 #include <drivers/serial.h>
 #include <slab.h>
 
-bool opt_debug;
+bool opt_debug = false;
+bool_cmd("debug", opt_debug);
 
 io_port_t com_ports[2];
 
 const char *kernel_cmdline;
+
+static __text_init int parse_bool(const char *s) {
+    if (!strcmp("no", s) || !strcmp("off", s) || !strcmp("false", s) ||
+        !strcmp("disable", s) || !strcmp("0", s))
+        return 0;
+
+    if (!strcmp("yes", s) || !strcmp("on", s) || !strcmp("true", s) ||
+        !strcmp("enable", s) || !strcmp("1", s))
+        return 1;
+
+    return -1;
+}
+
+void __text_init cmdline_parse(const char *cmdline) {
+    static __bss_init char opt[PAGE_SIZE];
+    char *optval, *optkey, *q;
+    const char *p = cmdline;
+    struct ktf_param *param;
+
+    if (cmdline == NULL)
+        return;
+
+    for (;;) {
+        p = string_trim_whitspace(p);
+
+        if (iseostr(*p))
+            break;
+
+        q = optkey = opt;
+        while ((!isspace(*p)) && (!iseostr(*p))) {
+            ASSERT(_ul(q - opt) < sizeof(opt) - 1);
+            *q++ = *p++;
+        }
+        *q = '\0';
+
+        /* split on '=' */
+        optval = strchr(opt, '=');
+        if (optval != NULL)
+            *optval++ = '\0';
+        else
+            /* assume a bool later */
+            optval = opt;
+
+        for (param = __start_cmdline; param < __end_cmdline; param++) {
+            if (strcmp(param->name, optkey))
+                continue;
+
+            switch (param->type) {
+            case STRING:
+                strcpy(param->var, optval);
+                break;
+            case ULONG:
+                *(unsigned long *) param->var = strtoul(optval, NULL, 0);
+                break;
+            case BOOL:
+                *(bool *) param->var =
+                    !!parse_bool(!strcmp(optval, optkey) ? "1" : optval);
+                break;
+            default:
+                panic("Unkown cmdline type detected...");
+                break;
+            }
+        }
+    }
+}
 
 static void init_console(void) {
     get_com_ports();
@@ -66,17 +133,18 @@ static __always_inline void zero_bss(void) {
     memset(_ptr(__start_bss_user), 0x0, _ptr(__end_bss_user) - _ptr(__start_bss_user));
 }
 
-static __always_inline void zap_boot_mappings(void) {
-#if defined(__x86_64__)
-    memset(paddr_to_virt_kern(virt_to_paddr(l4_pt_entries)), 0,
-           L4_PT_ENTRIES * sizeof(pgentry_t));
-#endif
-    memset(paddr_to_virt_kern(virt_to_paddr(l3_pt_entries)), 0,
-           L3_PT_ENTRIES * sizeof(pgentry_t));
-    memset(paddr_to_virt_kern(virt_to_paddr(l2_pt_entries)), 0,
-           L2_PT_ENTRIES * sizeof(pgentry_t));
-    memset(paddr_to_virt_kern(virt_to_paddr(l1_pt_entries)), 0,
-           L1_PT_ENTRIES * sizeof(pgentry_t));
+void zap_boot_mappings(void) {
+    for_each_memory_range (r) {
+        if (r->base == VIRT_IDENT_BASE && IS_INIT_SECTION(r->name)) {
+            if (strcmp(r->name, ".text.init"))
+                memset(r->start, 0, r->end - r->start);
+
+            for (mfn_t mfn = virt_to_mfn(r->start); mfn < virt_to_mfn(r->end); mfn++) {
+                vunmap(mfn_to_virt(mfn), PAGE_ORDER_4K);
+                reclaim_frame(mfn, PAGE_ORDER_4K);
+            }
+        }
+    }
 }
 
 void __noreturn __text_init kernel_start(uint32_t multiboot_magic,
@@ -87,10 +155,15 @@ void __noreturn __text_init kernel_start(uint32_t multiboot_magic,
     /* Initialize console early */
     init_console();
 
+    init_boot_traps();
+
     if (multiboot_magic == MULTIBOOT_BOOTLOADER_MAGIC) {
         /* Indentity mapping is still on, so fill in multiboot structures */
         init_multiboot(mbi, &kernel_cmdline);
     }
+
+    /* Parse commandline parameters */
+    cmdline_parse(kernel_cmdline);
 
     /* Initialize Physical Memory Manager */
     init_pmm();
@@ -113,15 +186,13 @@ void __noreturn __text_init kernel_start(uint32_t multiboot_magic,
 
     init_traps(0);
 
-    zap_boot_mappings();
-
     init_slab();
 
     init_apic(APIC_MODE_XAPIC);
 
     init_tasks();
 
-    smp_init();
+    init_smp();
 
     /* Jump from .text.init section to .text */
     asm volatile("push %0; ret" ::"r"(&kernel_main));

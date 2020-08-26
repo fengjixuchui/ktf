@@ -47,6 +47,7 @@
 #ifndef __ASSEMBLY__
 #define _ptr(val) ((void *) (unsigned long) (val))
 #define _ul(val)  ((unsigned long) (val))
+#define _int(val) ((int) (val))
 #endif
 
 #define __aligned(x) __attribute__((__aligned__(x)))
@@ -69,9 +70,15 @@
 #define __data_init __section(".data.init")
 #define __bss_init  __section(".bss.init")
 
+#define IS_INIT_SECTION(name)                                                            \
+    (!strcmp(name, ".text.init") || !strcmp(name, ".data.init") ||                       \
+     !strcmp(name, ".bss.init"))
+
 #define __user_text __section(".text.user")
 #define __user_data __section(".data.user")
 #define __user_bss  __section(".bss.user")
+
+#define __cmdline __section(".cmdline")
 
 #define barrier()      asm volatile("" ::: "memory")
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *) &(x))

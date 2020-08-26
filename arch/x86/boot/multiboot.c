@@ -52,14 +52,14 @@ void display_multiboot_mmap(void) {
     printk("\nPhysical Memory Map\n");
 
     if (!has_mbi_flag(MULTIBOOT_INFO_MEM_MAP)) {
-        printk("REGION: [0x%016lx - 0x%016lx] Lower memory\n", 0,
+        printk("REGION: [0x%016lx - 0x%016lx] Lower memory\n", 0UL,
                multiboot_info->mem_lower * KB(1));
         printk("REGION: [0x%016lx - 0x%016lx] Upper memory\n", MB(1),
                MB(1) + (multiboot_info->mem_upper * KB(1)));
         return;
     }
 
-    for (int i = 0; i < multiboot_mmap_num; i++) {
+    for (unsigned int i = 0; i < multiboot_mmap_num; i++) {
         multiboot_memory_map_t *entry = &multiboot_mmap[i];
 
         if (entry->type != MULTIBOOT_MEMORY_UNDEFINED) {
@@ -85,7 +85,7 @@ unsigned mbi_get_avail_memory_ranges_num(void) {
     unsigned num = 0;
 
     if (has_mbi_flag(MULTIBOOT_INFO_MEM_MAP)) {
-        for (int i = 0; i < multiboot_mmap_num; i++) {
+        for (unsigned int i = 0; i < multiboot_mmap_num; i++) {
             multiboot_memory_map_t *entry = &multiboot_mmap[i];
 
             if (entry->type == MULTIBOOT_MEMORY_AVAILABLE)
@@ -102,7 +102,7 @@ int mbi_get_avail_memory_range(unsigned index, addr_range_t *r) {
     unsigned avail = 0;
 
     if (has_mbi_flag(MULTIBOOT_INFO_MEM_MAP)) {
-        for (int i = 0; i < multiboot_mmap_num; i++) {
+        for (unsigned int i = 0; i < multiboot_mmap_num; i++) {
             multiboot_memory_map_t *entry = &multiboot_mmap[i];
 
             if (entry->type != MULTIBOOT_MEMORY_AVAILABLE)
@@ -135,7 +135,7 @@ int mbi_get_memory_range(paddr_t pa, addr_range_t *r) {
     paddr_t _start, _end;
 
     if (has_mbi_flag(MULTIBOOT_INFO_MEM_MAP)) {
-        for (int i = 0; i < multiboot_mmap_num; i++) {
+        for (unsigned int i = 0; i < multiboot_mmap_num; i++) {
             multiboot_memory_map_t *entry = &multiboot_mmap[i];
 
             _start = _paddr(entry->addr);
@@ -149,7 +149,7 @@ int mbi_get_memory_range(paddr_t pa, addr_range_t *r) {
         _start = 0x0;
         _end = multiboot_info->mem_lower * KB(1);
 
-        if (pa >= _start && pa < _end)
+        if (pa < _end)
             goto found;
 
         _start = MB(1);

@@ -22,24 +22,33 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef KTF_SMP_H
-#define KTF_SMP_H
+#ifndef KTF_CMDLINE_H
+#define KTF_CMDLINE_H
 
-#include <ktf.h>
-#include <lib.h>
-#include <processor.h>
+#ifndef __ASSEMBLY__
 
-#define INVALID_CPU (~0U)
+#define PARAM_MAX_LENGTH 32
 
-/* External declarations */
+struct __packed ktf_param {
+    char name[PARAM_MAX_LENGTH];
+    enum { STRING, ULONG, BOOL } type;
+    void *var;
+};
 
-extern void init_smp(void);
-extern unsigned get_nr_cpus(void);
+#define __ktfparam static __cmdline __used __aligned(1) struct ktf_param
 
-/* Static declarations */
+/* compile time check for param name size */
+#define __param_size_check(_name, _sizename)                                             \
+    char __unused_##_name[(sizeof(_sizename) >= PARAM_MAX_LENGTH) ? -1 : 0]
 
-static inline unsigned int smp_processor_id(void) {
-    return (unsigned int) rdmsr(MSR_TSC_AUX);
-}
+#define cmd_param(_name, _var, _type)                                                    \
+    __param_size_check(_var, _name);                                                     \
+    __ktfparam __cmd_##_var = {_name, _type, &_var};
 
-#endif /* KTF_SMP_H */
+#define bool_cmd(_cmdname, _varname)   cmd_param(_cmdname, _varname, BOOL)
+#define ulong_cmd(_cmdname, _varname)  cmd_param(_cmdname, _varname, ULONG)
+#define string_cmd(_cmdname, _varname) cmd_param(_cmdname, _varname, STRING)
+
+#endif /* __ASSEMBLY__ */
+
+#endif /* KTF_CMDLINE_H */

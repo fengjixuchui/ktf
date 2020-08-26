@@ -33,6 +33,8 @@
 #include <drivers/vga.h>
 #include <mm/pmm.h>
 
+size_t total_phys_memory;
+
 static list_head_t free_frames[MAX_PAGE_ORDER + 1];
 static list_head_t busy_frames[MAX_PAGE_ORDER + 1];
 
@@ -87,13 +89,15 @@ void display_memory_map(void) {
 
     for_each_memory_range (r) {
         printk("%11s: VA: [0x%016lx - 0x%016lx] PA: [0x%08lx - 0x%08lx]\n", r->name,
-               r->start, r->end, r->start - r->base, r->end - r->base);
+               _ul(r->start), _ul(r->end), _ul(r->start - r->base),
+               _ul(r->end - r->base));
     }
 }
 
 addr_range_t get_memory_range(paddr_t pa) {
     addr_range_t r;
 
+    memset(&r, 0, sizeof(r));
     if (mbi_get_memory_range(pa, &r) < 0)
         /* FIXME: e820_lower_memory_bound() */
         panic("Unable to get memory range for: 0x%016lx\n", pa);
@@ -113,8 +117,8 @@ paddr_t get_memory_range_end(paddr_t pa) {
     return _paddr(r.end);
 }
 
-static void display_frames_count(size_t size) {
-    printk("Avail memory frames: (total size: %lu MB)\n", size / MB(1));
+void display_frames_count(void) {
+    printk("Avail memory frames: (total size: %lu MB)\n", total_phys_memory / MB(1));
 
     for_each_order (order) {
         size_t count = frames_count[order];
@@ -148,6 +152,12 @@ static void add_frame(paddr_t *pa, unsigned int order, bool initial) {
     frames_count[order]++;
 }
 
+void reclaim_frame(mfn_t mfn, unsigned int order) {
+    paddr_t pa = mfn_to_paddr(mfn);
+
+    add_frame(&pa, order, false);
+}
+
 static size_t process_memory_range(unsigned index) {
     paddr_t start, end, cur;
     addr_range_t range;
@@ -171,7 +181,7 @@ static size_t process_memory_range(unsigned index) {
 
     /* Add initial 2M frames and align to 1G. */
     while (cur % PAGE_SIZE_1G && cur + PAGE_SIZE_2M <= end)
-        add_frame(&cur, PAGE_ORDER_2M, true);
+        add_frame(&cur, PAGE_ORDER_2M, false);
 
     /* Add all remaining 1G frames. */
     while (cur + PAGE_SIZE_1G <= end)
@@ -199,7 +209,6 @@ bool paddr_invalid(paddr_t pa) {
 }
 
 void init_pmm(void) {
-    size_t total_size = 0;
     unsigned num;
 
     printk("Initialize Physical Memory Manager\n");
@@ -213,10 +222,10 @@ void init_pmm(void) {
     num = mbi_get_avail_memory_ranges_num();
 
     /* Skip low memory range */
-    for (int i = 1; i < num; i++)
-        total_size += process_memory_range(i);
+    for (unsigned int i = 1; i < num; i++)
+        total_phys_memory += process_memory_range(i);
 
-    display_frames_count(total_size);
+    display_frames_count();
 
     if (opt_debug) {
         frame_t *frame;
@@ -292,7 +301,11 @@ void map_used_memory(void) {
     frame_t *frame;
 
     for_each_order (order) {
-        list_for_each_entry (frame, &busy_frames[order], list)
-            kmap(frame->mfn, order, L1_PROT);
+        list_for_each_entry (frame, &busy_frames[order], list) {
+            if (!frame->mapped) {
+                kmap(frame->mfn, order, L1_PROT);
+                frame->mapped = true;
+            }
+        }
     }
 }

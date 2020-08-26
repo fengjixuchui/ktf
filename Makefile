@@ -21,21 +21,32 @@ LD := ld
 GRUB_FILE := grub-file
 GRUB_MKIMAGE := grub-mkimage
 GRUB_MODULES := multiboot iso9660 biosdisk
+ifneq ($(UNITTEST),)
+GRUB_CONFIG := grub/boot/grub/grub-test.cfg
+else
+GRUB_CONFIG := grub/boot/grub/grub.cfg
+endif
 XORRISO := xorriso
 QEMU_BIN := qemu-system-x86_64
 GDB := gdb
 
 COMMON_FLAGS := -I$(ROOT)/include -I$(ROOT)/include/arch/x86 -pipe -MP -MMD -m64 -D__x86_64__
+ifneq ($(UNITTEST),)
+COMMON_FLAGS += -DKTF_UNIT_TEST
+endif
 
 AFLAGS  := $(COMMON_FLAGS) -D__ASSEMBLY__ -nostdlib -nostdinc
-CFLAGS  := $(COMMON_FLAGS) -std=gnu99 -O3 -g -Wall -ffreestanding
+CFLAGS  := $(COMMON_FLAGS) -std=gnu99 -O3 -g -Wall -Wextra -ffreestanding
 CFLAGS  += -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 CFLAGS  += -fno-stack-protector -fno-exceptions -fno-builtin
 CFLAGS  += -mcmodel=kernel -fno-pic -fno-asynchronous-unwind-tables -fno-unwind-tables
+CFLAGS  += -Wno-unused-parameter -Wno-address-of-packed-member
+CFLAGS  += -Werror
 
 -include Makeconf.local
 
 SOURCES     := $(shell find . -name \*.c)
+HEADERS     := $(shell find . -name \*.h)
 ASM_SOURCES := $(shell find . -name \*.S)
 LINK_SCRIPT := $(shell find . -name \*.ld)
 
@@ -104,7 +115,7 @@ $(ISO_FILE): all
 	@echo "GEN ISO" $(ISO_FILE)
 	@ $(GRUB_FILE) --is-x86-multiboot $(TARGET) || { echo "Multiboot not supported"; exit 1; }
 	@ cp $(TARGET) grub/boot/
-	@ $(GRUB_MKIMAGE) --format i386-pc-eltorito -p /boot/grub -o grub/boot.img $(GRUB_MODULES)
+	@ $(GRUB_MKIMAGE) --format i386-pc-eltorito -c $(GRUB_CONFIG) -p /boot/grub -o grub/boot.img $(GRUB_MODULES)
 	@ $(XORRISO) -as mkisofs -U -b boot.img -no-emul-boot -boot-load-size 4 -boot-info-table -o $(ISO_FILE) grub 2>> /dev/null
 endif
 
@@ -140,6 +151,12 @@ cscope:
 	@ $(all_sources) > cscope.files
 	@ cscope -b -q -k
 
+.PHONY: style
+style:
+	@echo "STYLE"
+	@ docker run --rm --workdir /src -v $(PWD):/src clang-format-lint --clang-format-executable /clang-format/clang-format10 \
+          -r $(SOURCES) $(HEADERS) | grep -v -E '^Processing [0-9]* files:' | patch -s -p1 ||:
+
 DOCKERFILE  := $(shell find $(ROOT) -type f -name Dockerfile)
 DOCKERIMAGE := "ktf:build"
 
@@ -151,4 +168,4 @@ dockerimage:
 .PHONY: docker%
 docker%: dockerimage
 	@echo "running target '$(strip $(subst :,, $*))' in docker"
-	@ docker run -it -v $(PWD):$(PWD) -w $(PWD) $(DOCKERIMAGE) bash -c "make -j $(strip $(subst :,, $*))"
+	@ docker run -it -e UNITTEST=$(UNITTEST) -v $(PWD):$(PWD) -w $(PWD) $(DOCKERIMAGE) bash -c "make -j $(strip $(subst :,, $*))"

@@ -34,6 +34,7 @@
 #define BIOS_ROM_ADDR_START 0xF0000
 
 #ifndef __ASSEMBLY__
+#include <cmdline.h>
 #include <list.h>
 #include <page.h>
 
@@ -51,6 +52,8 @@ extern unsigned long __start_data_init[], __end_data_init[];
 extern unsigned long __start_bss_init[], __end_bss_init[];
 
 extern unsigned long __start_rmode[], __end_rmode[];
+
+extern struct ktf_param __start_cmdline[], __end_cmdline[];
 
 struct addr_range {
     const char *name;
@@ -70,7 +73,7 @@ struct frame {
     struct list_head list;
     mfn_t mfn;
     uint32_t refcount;
-    uint32_t : 24, order : 6, uncachable : 1, free : 1;
+    uint32_t : 23, mapped : 1, order : 6, uncachable : 1, free : 1;
 };
 typedef struct frame frame_t;
 
@@ -79,6 +82,7 @@ typedef struct frame frame_t;
 /* External definitions */
 
 extern void display_memory_map(void);
+extern void display_frames_count(void);
 
 extern addr_range_t get_memory_range(paddr_t pa);
 extern paddr_t get_memory_range_start(paddr_t pa);
@@ -90,6 +94,7 @@ extern void init_pmm(void);
 
 extern mfn_t get_free_frames(unsigned int order);
 extern void put_frame(mfn_t mfn, unsigned int order);
+extern void reclaim_frame(mfn_t mfn, unsigned int order);
 
 extern void map_used_memory(void);
 
@@ -98,6 +103,30 @@ extern void map_used_memory(void);
 static inline bool mfn_invalid(mfn_t mfn) { return paddr_invalid(mfn_to_paddr(mfn)); }
 
 static inline mfn_t get_free_frame(void) { return get_free_frames(PAGE_ORDER_4K); }
+
+static inline bool in_text_section(const void *addr) {
+    return (addr >= _ptr(__start_text) && addr < _ptr(__end_text)) ||
+           (addr >= _ptr(__start_text_init) && addr < _ptr(__end_text_init));
+}
+
+static inline bool in_init_section(const void *addr) {
+    return (addr >= _ptr(__start_text_init) && addr < _ptr(__end_text_init)) ||
+           (addr >= _ptr(__start_data_init) && addr < _ptr(__end_data_init)) ||
+           (addr >= _ptr(__start_bss_init) && addr < _ptr(__end_bss_init));
+}
+
+static inline bool in_user_section(const void *addr) {
+    return (addr >= _ptr(__start_text_user) && addr < _ptr(__end_text_user)) ||
+           (addr >= _ptr(__start_data_user) && addr < _ptr(__end_data_user)) ||
+           (addr >= _ptr(__start_bss_user) && addr < _ptr(__end_bss_user));
+}
+
+static inline bool in_kernel_section(const void *addr) {
+    return (addr >= _ptr(__start_text) && addr < _ptr(__end_text)) ||
+           (addr >= _ptr(__start_data) && addr < _ptr(__end_data)) ||
+           (addr >= _ptr(__start_bss) && addr < _ptr(__end_bss)) ||
+           (addr >= _ptr(__start_rodata) && addr < _ptr(__end_rodata));
+}
 
 #endif /* __ASSEMBLY__ */
 

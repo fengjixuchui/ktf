@@ -1,0 +1,3 @@
+queries:
+- exclude: cpp/fixme-comment
+- exclude: cpp/short-global-name

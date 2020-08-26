@@ -37,7 +37,7 @@ static unsigned nr_cpus;
 static inline uint8_t get_mp_checksum(void *ptr, size_t len) {
     uint8_t checksum = 0;
 
-    for (int i = 0; i < len; i++)
+    for (unsigned int i = 0; i < len; i++)
         checksum += *((uint8_t *) ptr + i);
 
     return checksum;
@@ -117,7 +117,7 @@ static mpc_hdr_t *get_mpc_addr(const mpf_t *mpf_ptr) {
 
 static void dump_mpf(mpf_t *ptr) {
     printk("\nMP Floating Pointer Structure at %p:\n", ptr);
-    printk("  Signature: %.4s\n", &ptr->signature);
+    printk("  Signature: %.4s\n", (char *) &ptr->signature);
     printk("  MP Configuration Table phys address: 0x%08x\n", ptr->mpc_base);
     printk("  Length: 0x%02x\n", ptr->length);
     printk("  Spec revision: 0x%02x\n", ptr->spec_rev);
@@ -129,16 +129,16 @@ static void dump_mpf(mpf_t *ptr) {
 
 static void dump_mpc_hdr(mpc_hdr_t *ptr) {
     printk("\nMP Configuration Table Header at %p:\n", ptr);
-    printk("  Signature: %.4s\n", &ptr->signature);
+    printk("  Signature: %.4s\n", (char *) &ptr->signature);
     printk("  Length: 0x%02x\n", ptr->length);
     printk("  Spec revision: 0x%02x\n", ptr->spec_rev);
     printk("  Checksum: 0x%02x\n", ptr->checksum);
-    printk("  OEM ID: %.*s\n", sizeof(ptr->oem_id), ptr->oem_id);
-    printk("  Product ID: %.*s\n", sizeof(ptr->product_id), ptr->product_id);
-    printk("  OEM Table Ptr: %p\n", ptr->oem_tlb_ptr);
+    printk("  OEM ID: %.*s\n", (int) sizeof(ptr->oem_id), ptr->oem_id);
+    printk("  Product ID: %.*s\n", (int) sizeof(ptr->product_id), ptr->product_id);
+    printk("  OEM Table Ptr: %p\n", _ptr(ptr->oem_tlb_ptr));
     printk("  OEM Table Size: %x\n", ptr->oem_tlb_size);
-    printk("  Entry count: %p\n", ptr->entry_count);
-    printk("  LAPIC base address: %p\n", ptr->lapic_base);
+    printk("  Entry count: %x\n", ptr->entry_count);
+    printk("  LAPIC base address: %p\n", _ptr(ptr->lapic_base));
     printk("  Extended Table Length: %x\n", ptr->ext_length);
     printk("  Extended Table Checksum: %x\n", ptr->ext_checksum);
 }
@@ -156,7 +156,7 @@ static inline void dump_mpc_bus_entry(const mpc_bus_entry_t *e) {
 
 static inline void dump_mpc_ioapic_entry(const mpc_ioapic_entry_t *e) {
     printk("  IOAPIC: ID=%x, Version=%x, Enabled=%x, Address: %p\n", e->id, e->version,
-           e->en, e->base_addr);
+           e->en, _ptr(e->base_addr));
 }
 
 static const char *mpc_interrupt_type_names[] = {

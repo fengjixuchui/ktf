@@ -42,7 +42,7 @@ static unsigned nr_cpus;
 static inline uint8_t get_checksum(void *ptr, size_t len) {
     uint8_t checksum = 0;
 
-    for (int i = 0; i < len; i++)
+    for (unsigned int i = 0; i < len; i++)
         checksum += *((uint8_t *) ptr + i);
 
     return checksum;
@@ -80,8 +80,8 @@ static inline void *find_rsdp(void *from, void *to) {
         rsdp_rev1_t *rsdp = addr;
 
         if (validate_rsdp(rsdp)) {
-            printk("ACPI: RSDP [%p] v%02x %.*s\n", virt_to_paddr(rsdp), rsdp->rev,
-                   sizeof(rsdp->oem_id), rsdp->oem_id);
+            printk("ACPI: RSDP [%p] v%02x %.*s\n", _ptr(virt_to_paddr(rsdp)), rsdp->rev,
+                   _int(sizeof(rsdp->oem_id)), rsdp->oem_id);
             return rsdp;
         }
     }
@@ -142,14 +142,15 @@ static inline xsdt_t *acpi_find_xsdt(const rsdp_rev2_t *rsdp) {
 }
 
 static void acpi_dump_tables(void) {
-    for (int i = 0; i < max_acpi_tables; i++) {
+    for (unsigned int i = 0; i < max_acpi_tables; i++) {
         acpi_table_t *tab = acpi_tables[i];
         acpi_table_hdr_t *hdr = &tab->header;
 
         printk("ACPI: %.*s [%p] %04x (v%04x %.*s %04x %.*s %08x)\n",
-               sizeof(hdr->signature), &hdr->signature, tab, hdr->length, hdr->rev,
-               sizeof(hdr->oem_id), hdr->oem_id, hdr->oem_rev,
-               sizeof(hdr->asl_compiler_id), hdr->asl_compiler_id, hdr->asl_compiler_rev);
+               _int(sizeof(hdr->signature)), (char *) &hdr->signature, tab, hdr->length,
+               hdr->rev, _int(sizeof(hdr->oem_id)), hdr->oem_id, hdr->oem_rev,
+               _int(sizeof(hdr->asl_compiler_id)), hdr->asl_compiler_id,
+               hdr->asl_compiler_rev);
     }
 }
 
@@ -157,7 +158,8 @@ static unsigned process_madt_entries(void) {
     acpi_madt_t *madt = (acpi_madt_t *) acpi_find_table(MADT_SIGNATURE);
     acpi_madt_entry_t *entry;
 
-    printk("ACPI: [MADT] LAPIC Addr: %p, Flags: %08x\n", madt->lapic_addr, madt->flags);
+    printk("ACPI: [MADT] LAPIC Addr: %p, Flags: %08x\n", _ptr(madt->lapic_addr),
+           madt->flags);
 
     for (void *addr = madt->entry; addr < (_ptr(madt) + madt->header.length);
          addr += entry->len) {
@@ -193,7 +195,7 @@ static unsigned process_madt_entries(void) {
 }
 
 acpi_table_t *acpi_find_table(uint32_t signature) {
-    for (int i = 0; i < max_acpi_tables; i++) {
+    for (unsigned int i = 0; i < max_acpi_tables; i++) {
         acpi_table_t *tab = acpi_tables[i];
 
         if (tab->header.signature == signature)
@@ -217,7 +219,7 @@ void init_acpi(void) {
     if (rsdp->rev < 2) {
         rsdt_t *rsdt = acpi_find_rsdt(rsdp);
 
-        for (int i = 0; i < ACPI_NR_TABLES(rsdt); i++) {
+        for (unsigned int i = 0; i < ACPI_NR_TABLES(rsdt); i++) {
             acpi_table_t *tab = acpi_map_table(rsdt->entry[i]);
 
             if (get_checksum(tab, tab->header.length) == 0x0)
@@ -227,7 +229,7 @@ void init_acpi(void) {
     else {
         xsdt_t *xsdt = acpi_find_xsdt((rsdp_rev2_t *) rsdp);
 
-        for (int i = 0; i < ACPI_NR_TABLES(xsdt); i++) {
+        for (unsigned int i = 0; i < ACPI_NR_TABLES(xsdt); i++) {
             paddr_t tab_pa = _ul(xsdt->entry[i].high) << 32 | xsdt->entry[i].low;
             acpi_table_t *tab = acpi_map_table(tab_pa);
 

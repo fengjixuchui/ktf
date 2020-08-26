@@ -174,8 +174,8 @@ static void dump_control_regs(const struct cpu_regs *regs) {
 
 static void dump_segment_regs(const struct cpu_regs *regs) {
     printk("CURRENT:\n"
-           "CS=0x%04x DS=0x%04x SS=0x%04x\n"
-           "ES=0x%04x FS=0x%04x GS=0x%04x\n"
+           "CS=0x%04lx DS=0x%04lx SS=0x%04lx\n"
+           "ES=0x%04lx FS=0x%04lx GS=0x%04lx\n"
            "EXCEPTION:\n"
            "CS=0x%04x SS=0x%04x\n\n",
            read_cs(), read_ds(), read_ss(), read_es(), read_fs(), read_gs(), regs->cs,
@@ -186,17 +186,13 @@ static void dump_flags(const struct cpu_regs *regs) {
     printk("RFLAGS=0x%016lx\n\n", regs->_ASM_FLAGS);
 }
 
-static void dump_stack(const struct cpu_regs *regs, int words, int lines) {
-    unsigned long *sp;
-    int i;
+static void dump_stack(const struct cpu_regs *regs, unsigned words) {
+    unsigned long *sp = (unsigned long *) regs->_ASM_SP;
 
-    sp = (unsigned long *) regs->_ASM_SP;
     printk("STACK[0x%016p]:", sp);
-    for (i = 0; i < (words * lines); i++) {
-        if (i > 0 && (_ul(&sp[i]) % PAGE_SIZE) == 0)
-            break;
+    for (unsigned i = 0; i == 0 || (_ul(&sp[i]) % PAGE_SIZE_2M); i++) {
         if ((i % words) == 0)
-            printk("\n0x%04x: ", i * (sizeof(unsigned long)));
+            printk("\n0x%04lx: ", i * (sizeof(unsigned long)));
         printk("%016lx ", sp[i]);
     }
     printk("\n\n");
@@ -207,7 +203,7 @@ static void dump_regs(const struct cpu_regs *regs) {
     dump_segment_regs(regs);
     dump_control_regs(regs);
     dump_flags(regs);
-    dump_stack(regs, 4, 16);
+    dump_stack(regs, 4);
 }
 
 static const char *const exception_names[] = {
