@@ -18,6 +18,9 @@ endif
 CC := gcc
 LD := ld
 
+NM := nm
+PYTHON := python
+
 GRUB_FILE := grub-file
 GRUB_MKIMAGE := grub-mkimage
 GRUB_MODULES := multiboot iso9660 biosdisk
@@ -50,6 +53,10 @@ HEADERS     := $(shell find . -name \*.h)
 ASM_SOURCES := $(shell find . -name \*.S)
 LINK_SCRIPT := $(shell find . -name \*.ld)
 
+SYMBOLS_NAME := symbols
+SYMBOLS_TOOL := symbols.py
+SYMBOLS_DIR  := tools/symbols
+
 PREP_LINK_SCRIPT := $(LINK_SCRIPT:%.ld=%.lds)
 
 OBJS := $(SOURCES:%.c=%.o)
@@ -66,10 +73,19 @@ else
 all: docker$(TARGET)
 endif
 
-$(TARGET): $(OBJS)
+$(PREP_LINK_SCRIPT) : $(LINK_SCRIPT)
+	@ $(CC) $(AFLAGS) -E -P -C -x c $< -o $@
+
+$(TARGET): $(OBJS) $(PREP_LINK_SCRIPT)
 	@echo "LD " $@
-	@ $(CC) $(AFLAGS) -E -P -C -x c $(LINK_SCRIPT) -o $(PREP_LINK_SCRIPT)
 	@ $(LD) -T $(PREP_LINK_SCRIPT) -o $@ $^
+	@echo "GEN " $(SYMBOLS_NAME).S
+	@ $(NM) -p --format=posix $(TARGET) | $(PYTHON) $(SYMBOLS_DIR)/$(SYMBOLS_TOOL)
+	@echo "CC " $(SYMBOLS_NAME).S
+	@ $(CC) -c -o $(SYMBOLS_NAME).o $(AFLAGS) $(SYMBOLS_NAME).S
+	@ rm -rf $(SYMBOLS_NAME).S
+	@echo "LD " $(TARGET) $(SYMBOLS_NAME).o
+	@ $(LD) -T $(PREP_LINK_SCRIPT) -o $@ $(OBJS) $(SYMBOLS_NAME).o
 
 %.o: %.S
 	@echo "AS " $@
@@ -78,6 +94,9 @@ $(TARGET): $(OBJS)
 %.o: %.c
 	@echo "CC " $@
 	@ $(CC) -c -o $@ $(CFLAGS) $<
+
+DEPFILES := $(OBJS:.o=.d)
+-include $(wildcard $(DEPFILES))
 
 clean:
 	@echo "CLEAN"
@@ -100,8 +119,13 @@ QEMU_PARAMS += -serial stdio
 QEMU_PARAMS += -no-reboot -no-shutdown
 QEMU_PARAMS += -smp cpus=4
 ifeq ($(SYSTEM),LINUX)
+ifneq ($(USE_KVM), false) # you can hard-disable KVM use with the USE_KVM environment variable
+HAVE_KVM=$(shell lsmod | awk '/^kvm / {print $$1}')
+ifeq ($(HAVE_KVM), kvm)
 QEMU_PARAMS += -enable-kvm
-endif
+endif # HAVE_KVM
+endif # USE_KVM
+endif # SYSTEM == LINUX
 
 QEMU_PARAMS_KERNEL := -append "param1 param2 param3"
 QEMU_PARAMS_DEBUG := -s &
@@ -111,7 +135,7 @@ ISO_FILE := boot.iso
 ifneq ($(SYSTEM), LINUX)
 $(ISO_FILE): dockerboot.iso
 else
-$(ISO_FILE): all
+$(ISO_FILE): $(TARGET)
 	@echo "GEN ISO" $(ISO_FILE)
 	@ $(GRUB_FILE) --is-x86-multiboot $(TARGET) || { echo "Multiboot not supported"; exit 1; }
 	@ cp $(TARGET) grub/boot/
@@ -159,13 +183,21 @@ style:
 
 DOCKERFILE  := $(shell find $(ROOT) -type f -name Dockerfile)
 DOCKERIMAGE := "ktf:build"
+ifeq ($(SYSTEM), LINUX)
+	DOCKER_BUILD_ARGS=--build-arg USER_ID=$$(id -u) --build-arg GROUP_ID=$$(id -g) --build-arg USER=$$USER
+else
+	# On Docker for Mac I ran into issues because Mac user IDs are huge and Ubuntu did not like creating
+	# UIDs with such huge numbers. Hence, use fixed UID/GID here. Confirmed we still get our image built.
+	DOCKER_BUILD_ARGS=--build-arg USER_ID=1024 --build-arg GROUP_ID=1024 --build-arg USER=$$USER
+endif
 
 .PHONY: dockerimage
 dockerimage:
 	@echo "Creating docker image"
-	@ docker build -t $(DOCKERIMAGE) -f $(DOCKERFILE) .
+	@ docker build -t $(DOCKERIMAGE) -f $(DOCKERFILE) \
+		$(DOCKER_BUILD_ARGS) .
 
 .PHONY: docker%
 docker%: dockerimage
 	@echo "running target '$(strip $(subst :,, $*))' in docker"
-	@ docker run -it -e UNITTEST=$(UNITTEST) -v $(PWD):$(PWD) -w $(PWD) $(DOCKERIMAGE) bash -c "make -j $(strip $(subst :,, $*))"
+	@ docker run -it -e UNITTEST=$(UNITTEST) -v $(PWD):$(PWD)$(DOCKER_MOUNT_OPTS) -w $(PWD) $(DOCKERIMAGE) bash -c "make -j $(strip $(subst :,, $*))"

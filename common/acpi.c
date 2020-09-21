@@ -120,6 +120,9 @@ static inline void *acpi_map_table(paddr_t pa) {
 static inline rsdt_t *acpi_find_rsdt(const rsdp_rev1_t *rsdp) {
     rsdt_t *rsdt = acpi_map_table(rsdp->rsdt_paddr);
 
+    if (!rsdt)
+        return NULL;
+
     if (RSDT_SIGNATURE != rsdt->header.signature)
         return NULL;
 
@@ -131,6 +134,9 @@ static inline rsdt_t *acpi_find_rsdt(const rsdp_rev1_t *rsdp) {
 
 static inline xsdt_t *acpi_find_xsdt(const rsdp_rev2_t *rsdp) {
     xsdt_t *xsdt = acpi_map_table(rsdp->xsdt_paddr);
+
+    if (!xsdt)
+        return NULL;
 
     if (XSDT_SIGNATURE != xsdt->header.signature)
         return NULL;
@@ -158,6 +164,9 @@ static unsigned process_madt_entries(void) {
     acpi_madt_t *madt = (acpi_madt_t *) acpi_find_table(MADT_SIGNATURE);
     acpi_madt_entry_t *entry;
 
+    if (!madt)
+        return 0;
+
     printk("ACPI: [MADT] LAPIC Addr: %p, Flags: %08x\n", _ptr(madt->lapic_addr),
            madt->flags);
 
@@ -175,6 +184,9 @@ static unsigned process_madt_entries(void) {
             percpu->enabled = madt_cpu->flags & 0x1;
             if (madt_cpu->apic_proc_id == 0)
                 percpu->bsp = true;
+
+            if (!percpu->enabled)
+                continue;
 
             nr_cpus++;
             printk("ACPI: [MADT] APIC Processor ID: %u, APIC ID: %u, Flags: %08x\n",
@@ -219,21 +231,27 @@ void init_acpi(void) {
     if (rsdp->rev < 2) {
         rsdt_t *rsdt = acpi_find_rsdt(rsdp);
 
+        if (!rsdt)
+            return;
+
         for (unsigned int i = 0; i < ACPI_NR_TABLES(rsdt); i++) {
             acpi_table_t *tab = acpi_map_table(rsdt->entry[i]);
 
-            if (get_checksum(tab, tab->header.length) == 0x0)
+            if (tab && get_checksum(tab, tab->header.length) == 0x0)
                 acpi_tables[max_acpi_tables++] = tab;
         }
     }
     else {
         xsdt_t *xsdt = acpi_find_xsdt((rsdp_rev2_t *) rsdp);
 
+        if (!xsdt)
+            return;
+
         for (unsigned int i = 0; i < ACPI_NR_TABLES(xsdt); i++) {
             paddr_t tab_pa = _ul(xsdt->entry[i].high) << 32 | xsdt->entry[i].low;
             acpi_table_t *tab = acpi_map_table(tab_pa);
 
-            if (get_checksum(tab, tab->header.length) == 0x0)
+            if (tab && get_checksum(tab, tab->header.length) == 0x0)
                 acpi_tables[max_acpi_tables++] = tab;
         }
     }

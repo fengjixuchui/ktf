@@ -54,6 +54,7 @@
 #define __noreturn   __attribute__((__noreturn__))
 #define __packed     __attribute__((__packed__))
 #define __used       __attribute__((__used__))
+#define __weak       __attribute__((__weak__))
 #define __noinline   __attribute__((__noinline__))
 #define __section(s) __attribute__((__section__(s)))
 
@@ -71,8 +72,8 @@
 #define __bss_init  __section(".bss.init")
 
 #define IS_INIT_SECTION(name)                                                            \
-    (!strcmp(name, ".text.init") || !strcmp(name, ".data.init") ||                       \
-     !strcmp(name, ".bss.init"))
+    ((name) && (!strcmp(name, ".text.init") || !strcmp(name, ".data.init") ||            \
+                !strcmp(name, ".bss.init")))
 
 #define __user_text __section(".text.user")
 #define __user_data __section(".data.user")
